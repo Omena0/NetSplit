@@ -6,4 +6,6 @@ dist
 *cache
 *.gz
 *.whl
+dist/
+*.egg-info/
 .coverage
