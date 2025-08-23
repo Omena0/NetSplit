@@ -18,8 +18,14 @@ import time
 import json
 import sys
 
-VERSION = "3.3.1"
-RELEASE_DISPLAY_NAME = "3D"
+VERSION = "NetSplit-2"
+
+# Backwards-compatibility: list of supported protocol version tokens (newest first).
+# This list is used during protocol negotiation so older clients can still connect.
+SUPPORTED_VERSIONS: List[str] = [
+    "NetSplit-2",
+    "NetSplit-1",
+]
 
 # Protocol error payloads sent to clients when the proxy fails early.
 PROTOCOL_ERRORS: Dict[str, bytes] = {
@@ -185,7 +191,10 @@ class socket(_socket.socket):
         else:
             ver = initial[: len(VERSION)]
 
-        if ver != VERSION.encode():
+        # Accept any supported protocol version token (not just the current
+        # `VERSION`). This allows older clients to connect if we still support
+        # their protocol layout.
+        if ver not in [v.encode() for v in SUPPORTED_VERSIONS]:
             return self._send_protocol_error(cs, "no_support", ver)
 
         cs.sendall(b"OK")
