@@ -1,7 +1,7 @@
 *.pyc
 *.pyd
 *__*
-*-info
+*-info*
 dist
 *cache
 *.gz

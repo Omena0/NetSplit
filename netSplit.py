@@ -18,7 +18,8 @@ import time
 import json
 import sys
 
-VERSION = "NetSplit-1"
+VERSION = "3.0"
+RELEASE_DISPLAY_NAME = "3A"
 
 # Protocol error payloads sent to clients when the proxy fails early.
 PROTOCOL_ERRORS: Dict[str, bytes] = {
