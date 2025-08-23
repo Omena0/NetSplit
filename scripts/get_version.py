@@ -33,11 +33,13 @@ def _map_candidate_to_version(candidate: str) -> tuple[str, str]:
     """
     m = re.match(r"^([0-9]+)([A-Za-z])?$", candidate)
     if not m:
-        return candidate, "0.0"
+        # Fall back to a PEP-440 friendly zero version
+        return candidate, "0.0.0"
     major = m[1]
     letter = m[2]
     minor = (ord(letter.upper()) - ord('A')) if letter else 0
-    return candidate, f"{major}.{minor}"
+    # Use a three-segment version (patch=0) for PEP-440 compatibility
+    return candidate, f"{major}.{minor}.0"
 
 # Determine release display name and numeric version
 RELEASE_DISPLAY_NAME = os.environ.get("RELEASE_DISPLAY_NAME")
@@ -55,7 +57,7 @@ if not (RELEASE_DISPLAY_NAME and NETSPLIT_VERSION):
 if not RELEASE_DISPLAY_NAME:
     RELEASE_DISPLAY_NAME = "dev"
 if not NETSPLIT_VERSION:
-    NETSPLIT_VERSION = "0.0"
+    NETSPLIT_VERSION = "0.0.0"
 
 
 def get_netsplit_version() -> str:
