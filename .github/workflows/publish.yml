@@ -1,0 +1,125 @@
+name: Upload Python Package
+
+on:
+  release:
+    types: [published]
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+permissions:
+  contents: read
+
+jobs:
+  ensure-tag:
+    runs-on: ubuntu-latest
+    # This job needs write permissions to push tags back to the repository
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure release has a tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          echo "Release tag (from event): '$RELEASE_TAG'"
+
+          if [ -n "$RELEASE_TAG" ]; then
+            echo "Release already has tag: $RELEASE_TAG"
+            exit 0
+          fi
+
+          # Find the most recent commit whose message contains a '-' and take the part before the first '-'
+          # Accept candidates that match the naming scheme like '1A' or '2B' (one or more digits then optional letter).
+          TAG=""
+          for commit in $(git rev-list --max-count=200 HEAD); do
+            msg=$(git log -1 --pretty=%B "$commit" | sed -n '1p' | tr -d '\r')
+            if echo "$msg" | grep -q "-"; then
+              candidate=$(echo "$msg" | cut -d'-' -f1 | tr -d '[:space:]')
+              if echo "$candidate" | grep -E -q '^[0-9]+[A-Za-z]?$'; then
+                TAG="$candidate"
+                break
+              fi
+            fi
+          done
+
+          if [ -z "$TAG" ]; then
+            TAG="1A"
+            echo "No matching commit found; falling back to default: $TAG"
+          else
+            echo "Found tag candidate from commits: $TAG"
+          fi
+
+          # Push tag only if it doesn't exist remotely
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already exists on remote"
+          else
+            echo "Creating tag: $TAG"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "Tag for release $TAG"
+            git push origin "refs/tags/$TAG"
+          fi
+
+  release-build:
+    runs-on: ubuntu-latest
+    needs:
+      - ensure-tag
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Build release distributions
+        run: |
+          # NOTE: put your own distribution build steps here.
+          python -m pip install build
+          python -m build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+  pypi-publish:
+    runs-on: ubuntu-latest
+    needs:
+      - release-build
+    permissions:
+      # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
+
+    # Dedicated environments with protections for publishing are strongly recommended.
+    # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
+    environment:
+      name: pypi
+      # OPTIONAL: uncomment and update to include your PyPI project URL in the deployment status:
+      url: https://pypi.org/p/PyNetSplit
+      #
+      # ALTERNATIVE: if your GitHub Release name is the PyPI project version string
+      # ALTERNATIVE: exactly, uncomment the following line instead:
+      # url: https://pypi.org/project/YOURPROJECT/${{ github.event.release.name }}
+
+    steps:
+      - name: Retrieve release distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+      - name: Publish release distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
