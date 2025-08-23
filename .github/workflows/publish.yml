@@ -103,6 +103,8 @@ jobs:
     permissions:
       # IMPORTANT: this permission is mandatory for trusted publishing
       id-token: write
+    env:
+      TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
 
     # Dedicated environments with protections for publishing are strongly recommended.
     # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
@@ -123,15 +125,13 @@ jobs:
           path: dist/
 
       - name: Publish to PyPI (token)
-        if: ${{ secrets.PYPI_API_TOKEN != '' }}
-        env:
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        if: ${{ env.TWINE_PASSWORD != '' }}
         run: |
           python -m pip install --upgrade twine
           python -m twine upload --non-interactive -u __token__ -p "$TWINE_PASSWORD" dist/*
 
       - name: Publish to PyPI (OIDC)
-        if: ${{ secrets.PYPI_API_TOKEN == '' }}
+        if: ${{ env.TWINE_PASSWORD == '' }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
