@@ -1,3 +1,15 @@
+"""Lightweight TCP proxy with a tiny selection protocol (NetSplit).
+
+This module implements a small proxy server that speaks a minimal
+selection protocol allowing a client to request one of several backend
+servers by index or name. It forwards raw TCP data between the client
+and the selected backend and contains small helpers for HTTP detection
+and error reporting used by both client and server flows.
+
+The public entry point is the module-level runner at the bottom which
+loads a JSON configuration and starts listening on TCP port 8080.
+"""
+
 from typing import Tuple, Optional, List, Dict
 import socket as _socket
 import threading
@@ -15,6 +27,7 @@ PROTOCOL_ERRORS: Dict[str, bytes] = {
     "proxy_error": b"E\x02",
     "invalid_server": b"E\x03",
 }
+
 
 class socket(_socket.socket):
     """Small _socket subclass that contains proxy helper methods.
@@ -44,16 +57,28 @@ class socket(_socket.socket):
             return f"Protocol error: {code} [{decoded}]"
         return f"Protocol error: {code}"
 
-    def bind(self, address: Tuple[str, int]):
+    def bind(self, address: Tuple[str, int]) -> None:
+        """Bind and start listening on ``address``.
+
+        This wrapper sets a conservative listen backlog so the socket is
+        ready to accept connections after binding.
+
+        :param address: (host, port) tuple to bind the socket to.
+        """
         super().bind(address)
         # default listen backlog
         self.listen(5)
 
     def recv_exact(self, sock: _socket.socket, n: int) -> bytes:
-        """Read exactly n bytes from sock or return b'' on EOF.
+        """Read exactly ``n`` bytes from ``sock`` or return b'' on EOF.
 
         This helper avoids partial reads when the protocol expects fixed
-        length fields.
+        length fields. It will block until ``n`` bytes are received or the
+        peer closes the connection.
+
+        :param sock: socket to read from
+        :param n: number of bytes to read
+        :return: bytes read (length ``n``) or b'' on EOF
         """
         buf = b""
         while len(buf) < n:
@@ -98,11 +123,25 @@ class socket(_socket.socket):
 
     # Server-side helpers
     def accept(self) -> Tuple[_socket.socket, Tuple[str, int]]:
+        """Accept a new connection and return (conn, address).
+
+        This signature mirrors ``socket.socket.accept`` but provides an
+        explicit return type for the local subclass.
+        """
         return super().accept()
 
-    def handle_client(self, cs: _socket.socket, addr) -> Optional[str]:
-        """Handle an incoming client connection and either proxy it or
-        speak the small selection protocol to connect it to a backend.
+    def handle_client(self, cs: _socket.socket, addr: Tuple[str, int]) -> Optional[str]:
+        """Handle an incoming client connection.
+
+        This method performs a small amount of protocol detection (very
+        basic HTTP detection by method token) and either forwards the
+        connection to an HTTP backend or speaks the tiny selection
+        protocol to choose a backend and proxy raw TCP traffic.
+
+        :param cs: client-side socket object
+        :param addr: client address tuple (host, port)
+        :return: optional human-readable error string for logging, or
+                 ``None`` on success/normal termination.
         """
         # Read an initial buffer to help detect HTTP requests without
         # fragmenting the request data that should go to an HTTP backend.
@@ -186,14 +225,10 @@ class socket(_socket.socket):
                 return self._send_protocol_error(cs, "client_error", b"missing_name_len")
             ln = int.from_bytes(llen, "big")
             name = cs.recv(ln).decode()
-            if isinstance(config, dict):
-                if name in config:
-                    server = config[name]
-                else:
-                    return self._send_protocol_error(cs, "invalid_server", name.encode())
+            if isinstance(config, dict) and name in config:
+                server = config[name]
             else:
                 return self._send_protocol_error(cs, "invalid_server", name.encode())
-
         else:
             # Legacy path: first byte was part of a 4-byte integer id
             rest = self.recv_exact(cs, 3)
@@ -225,9 +260,16 @@ class socket(_socket.socket):
         return self._proxy_between(cs, sock)
 
     def _proxy_between(self, cs: _socket.socket, sock: _socket.socket) -> Optional[str]:
-        """Proxy data between client _socket `cs` and backend `sock` using selectors.
+        """Proxy data between client socket ``cs`` and backend ``sock``.
 
-        This will forward data until one side closes the connection.
+        Uses ``selectors.DefaultSelector`` to non-blockingly forward data
+        between the two sockets until one end closes. This function is a
+        low-level forwarding loop and returns an optional error string if
+        something notable occurred (currently used for logging only).
+
+        :param cs: client socket
+        :param sock: backend socket
+        :return: optional error message string or ``None``
         """
         # Print peer names (allow exception to propagate if it fails)
         print(f"Proxying {':'.join(map(str, cs.getpeername()))} -> {':'.join(map(str, sock.getpeername()))}")
@@ -249,7 +291,8 @@ class socket(_socket.socket):
                     data = s.recv(4096)
                 except BlockingIOError:
                     continue
-                except ConnectionResetError:
+                except (ConnectionResetError, ConnectionAbortedError):
+                    # Treat aborted/reset connections as a clean shutdown
                     return None
 
                 if DEBUG:
@@ -273,8 +316,16 @@ def _safe_close(sock: Optional[_socket.socket]) -> None:
     sock.close()
 
 def _safe_unregister(sel: selectors.BaseSelector, sock: _socket.socket) -> None:
-    """Unregister a fileobj from selector, ignoring errors."""
-    sel.unregister(sock)
+    """Unregister a file object from ``sel`` ignoring any errors.
+
+    Selectors may raise if the file object is not registered; this helper
+    swallows those errors to allow best-effort cleanup.
+    """
+    try:
+        sel.unregister(sock)
+    except Exception:
+        # ignore errors during cleanup
+        pass
 
 def _cleanup_pair(sel: selectors.BaseSelector, cs: _socket.socket, sock: _socket.socket) -> None:
     """Unregister and close two _sockets, best-effort."""
@@ -283,7 +334,12 @@ def _cleanup_pair(sel: selectors.BaseSelector, cs: _socket.socket, sock: _socket
     _safe_close(cs)
     _safe_close(sock)
 
-def _accept_loop(listener: _socket, stop_event: threading.Event, workers: List[threading.Thread]):
+def _accept_loop(listener: _socket, stop_event: threading.Event, workers: List[threading.Thread]) -> None:
+    """Accept loop that spawns a worker thread for each incoming client.
+
+    Runs until ``stop_event`` is set or the listener raises ``OSError``
+    (usually because it was closed during shutdown).
+    """
     while not stop_event.is_set():
         try:
             cs, addr = listener.accept()
@@ -293,7 +349,13 @@ def _accept_loop(listener: _socket, stop_event: threading.Event, workers: List[t
         workers.append(t)
         t.start()
 
-def _client_worker(listener: _socket, cs: _socket.socket, addr):
+def _client_worker(listener: _socket, cs: _socket.socket, addr: Tuple[str, int]) -> None:
+    """Thread target that delegates a client connection to ``listener``.
+
+    :param listener: the proxy listener socket (provides helper methods)
+    :param cs: client socket
+    :param addr: client address tuple
+    """
     err = listener.handle_client(cs, addr)
     if err:
         print(f'client {addr} error: {err}')

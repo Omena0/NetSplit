@@ -1,3 +1,9 @@
 *.pyc
 *.pyd
 *__*
+*-info
+dist
+*cache
+*.gz
+*.whl
+.coverage

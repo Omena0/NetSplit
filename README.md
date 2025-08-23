@@ -2,6 +2,8 @@
 # NetSplit
 
 [![Build](https://github.com/Omena0/NetSplit/actions/workflows/publish.yml/badge.svg?branch=master)](https://github.com/Omena0/NetSplit/actions/workflows/publish.yml)
+[![Tests](https://github.com/Omena0/NetSplit/actions/workflows/pytest.yml/badge.svg?branch=master)](https://github.com/Omena0/NetSplit/actions/workflows/pytest.yml)
+[![Coverage](https://codecov.io/gh/Omena0/NetSplit/branch/master/graph/badge.svg)](https://codecov.io/gh/Omena0/NetSplit)
 
 [PyPI Package](https://pypi.org/project/PyNetSplit/)
 
