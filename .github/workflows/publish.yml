@@ -1,8 +1,11 @@
-name: Upload Python Package
+name: Build
 
 on:
   release:
     types: [published]
+  push:
+    tags:
+      - '*'
 
 # This workflow uses actions that are not certified by GitHub.
 # They are provided by a third-party and are governed by
