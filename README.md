@@ -3,6 +3,8 @@
 
 [![Build](https://github.com/Omena0/NetSplit/actions/workflows/publish.yml/badge.svg?branch=master)](https://github.com/Omena0/NetSplit/actions/workflows/publish.yml)
 
+[PyPI Package](https://pypi.org/project/PyNetSplit/)
+
 Split a single tcp/ip connection between multiple servers.
 
 Wait isn't this just NAT....
