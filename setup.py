@@ -23,7 +23,11 @@ class egg_info(_egg_info):
     def run(self):
         try:
             version_file = here / "VERSION"
-            if version and not version_file.exists():
+            # Always ensure the resolved version is present in VERSION so
+            # isolated wheel builds (which may unpack an sdist without .git)
+            # read a deterministic version. Overwrite any existing file to
+            # avoid mismatches between sdist and wheel.
+            if version:
                 version_file.write_text(str(version), encoding="utf8")
         except Exception:
             pass
@@ -100,7 +104,10 @@ if not version:
 # same static version. Do not overwrite an existing VERSION file.
 try:
     version_file = here / "VERSION"
-    if version and not version_file.exists():
+    # Write (or overwrite) the VERSION file with the resolved version so
+    # the build backend running in an isolated environment sees the same
+    # version string.
+    if version:
         version_file.write_text(str(version), encoding="utf8")
 except Exception:
     # Best-effort only; fall back below

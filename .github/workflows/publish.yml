@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should_build: ${{ steps.detect.outputs.should_build }}
+      # netsplit_version and release_display_name are computed in the build job
+      # to keep version logic centralized in scripts/get_version.py
     # This job needs write permissions to push tags back to the repository
     permissions:
       contents: write
@@ -25,6 +27,7 @@ jobs:
           fetch-depth: 0
 
       - name: Ensure release has a tag
+        id: ensure_tag
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -71,6 +74,8 @@ jobs:
             git push origin "refs/tags/$TAG"
           fi
           echo "should_build=true" >> "$GITHUB_OUTPUT"
+          # Export the chosen tag as a step output so later steps can use it
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Detect release candidate in commits
         id: detect
@@ -97,6 +102,11 @@ jobs:
           else
             echo "should_build=false" >> "$GITHUB_OUTPUT"
           fi
+
+      # The numeric package version is determined in the build job using
+      # scripts/get_version.py; removing the set_version step keeps the
+      # ensure-tag job focused on tagging only and avoids cross-job
+      # heredoc/python invocation complexity.
 
   build:
     runs-on: ubuntu-latest
