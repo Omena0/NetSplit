@@ -1,0 +1,9 @@
+README.md
+netSplit.py
+pyproject.toml
+setup.cfg
+setup.py
+PyNetSplit.egg-info/PKG-INFO
+PyNetSplit.egg-info/SOURCES.txt
+PyNetSplit.egg-info/dependency_links.txt
+PyNetSplit.egg-info/top_level.txt
