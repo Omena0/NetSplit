@@ -52,8 +52,11 @@ def test_handle_client_empty_initial():
 def test_handle_client_short_version():
     cli, conn, srv = make_connected_pair()
     try:
-        # Client sends only a short prefix of VERSION then closes
-        cli.sendall(netSplit.VERSION[:3].encode())
+        # Client sends only a short prefix of VERSION then closes. Use
+        # VERSION[:-1] so the test remains valid even if VERSION length
+        # changes (ensures a true prefix, not the full value).
+        prefix = netSplit.VERSION[:-1] if len(netSplit.VERSION) > 1 else netSplit.VERSION[:0]
+        cli.sendall(prefix.encode())
         cli.close()
         listener = NetSocket(_socket.AF_INET, _socket.SOCK_STREAM)
         res = listener.handle_client(conn, ('127.0.0.1', 12345))

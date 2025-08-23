@@ -32,4 +32,17 @@ jobs:
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
       with:
+        # Upload the generated coverage.xml. For public repos a token is
+        # not required, but you can add CODECOV_TOKEN as a secret if needed.
         files: ./coverage.xml
+        # Add a flag/name so uploads are easy to identify in Codecov UI
+        flags: unittests
+        name: pytest-coverage
+        # Do not fail the CI if upload to Codecov has an issue (helps debug badge problems)
+        fail_ci_if_error: false
+
+    - name: Show coverage.xml (first 40 lines)  # helps debug Codecov uploads
+      if: always()
+      run: |
+        echo '--- coverage.xml (preview) ---'
+        head -n 40 coverage.xml || true

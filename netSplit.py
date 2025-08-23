@@ -361,6 +361,7 @@ def _client_worker(listener: _socket, cs: _socket.socket, addr: Tuple[str, int])
     if err:
         print(f'client {addr} error: {err}')
 
+# This just displays all traffic
 DEBUG = False
 
 if __name__ == '__main__':
