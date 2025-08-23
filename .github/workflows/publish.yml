@@ -113,6 +113,11 @@ jobs:
       id-token: write
 
     steps:
+      - name: Clean dist directory
+        run: |
+          set -euo pipefail
+          rm -rf dist || true
+
       - name: Retrieve release distributions
         uses: actions/download-artifact@v4
         with:

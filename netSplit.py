@@ -18,8 +18,8 @@ import time
 import json
 import sys
 
-VERSION = "3.0"
-RELEASE_DISPLAY_NAME = "3A"
+VERSION = "3.3"
+RELEASE_DISPLAY_NAME = "3D"
 
 # Protocol error payloads sent to clients when the proxy fails early.
 PROTOCOL_ERRORS: Dict[str, bytes] = {

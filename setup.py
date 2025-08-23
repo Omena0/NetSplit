@@ -12,7 +12,7 @@ if m:
 else:
     version = "0.0.0"
 
-display_name = rd[1] if rd else None
+display_name = rd.group(1) if rd else None
 
 setup(
     version=version,
