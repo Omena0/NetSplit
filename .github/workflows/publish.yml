@@ -103,6 +103,9 @@ jobs:
     needs:
       - ensure-tag
     if: needs.ensure-tag.outputs.should_build == 'true'
+    outputs:
+      netsplit_version: ${{ steps.get_version.outputs.netsplit_version }}
+      release_display_name: ${{ steps.get_version.outputs.release_display_name }}
 
     steps:
       - uses: actions/checkout@v4
@@ -110,6 +113,26 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+
+      - name: Determine package version
+        id: get_version
+        run: |
+          set -euo pipefail
+          python -c "from scripts.get_version import get_netsplit_version,get_release_display_name; print(get_netsplit_version()); print(get_release_display_name())" > /tmp/_vers
+          echo "netsplit_version=$(sed -n '1p' /tmp/_vers)" >> "$GITHUB_OUTPUT"
+          echo "release_display_name=$(sed -n '2p' /tmp/_vers)" >> "$GITHUB_OUTPUT"
+
+      - name: Log resolved version
+        run: |
+          set -euo pipefail
+          echo "Resolved NETSPLIT_VERSION=${{ steps.get_version.outputs.netsplit_version }}"
+          echo "Resolved RELEASE_DISPLAY_NAME=${{ steps.get_version.outputs.release_display_name }}"
+          # Append to the GitHub Actions job summary for quick visibility
+          if [ -n "${GITHUB_STEP_SUMMARY-}" ]; then
+            echo "### NetSplit version info" >> "$GITHUB_STEP_SUMMARY"
+            echo "* NETSPLIT_VERSION: ${{ steps.get_version.outputs.netsplit_version }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "* RELEASE_DISPLAY_NAME: ${{ steps.get_version.outputs.release_display_name }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Build release distributions
         run: |
@@ -146,18 +169,92 @@ jobs:
       id-token: write
 
     steps:
+      - name: Determine version and check PyPI
+        id: check_pypi
+        run: |
+          set -euo pipefail
+          # Prefer the canonical version discovered during the build job.
+          if [ -n "${{ needs.build.outputs.netsplit_version }}" ]; then
+            VER="${{ needs.build.outputs.netsplit_version }}"
+            echo "Using version from build job: $VER"
+          else
+            # Fall back to inferring from the sdist filename
+            SDIST=$(ls dist/*.tar.gz 2>/dev/null | head -n 1 || true)
+            if [ -z "$SDIST" ]; then
+              echo "No sdist found in dist/; cannot determine version" >&2
+              echo "skip_publish=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            FNAME=$(basename "$SDIST")
+            VER=$(echo "$FNAME" | sed -E 's/^[Pp][Yy]?[Nn]?[Ee]?[Tt]?[Ss]?[Pp]?[Ll]?[Ii]?[Tt]-//; s/\.tar\.gz$//')
+          fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "Version to publish: $VER"
+
+          # Query PyPI for the version; 200 means it already exists.
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/PyNetSplit/$VER/json" || true)
+          if [ "$STATUS" = "200" ]; then
+            echo "Version $VER already exists on PyPI; skipping publish"
+            echo "skip_publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip_publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Clean dist directory
+        if: steps.check_pypi.outputs.skip_publish != 'true'
         run: |
           set -euo pipefail
           rm -rf dist || true
 
       - name: Retrieve release distributions
+        if: steps.check_pypi.outputs.skip_publish != 'true'
         uses: actions/download-artifact@v4
         with:
           name: release-dists
           path: dist/
 
+      - name: Select latest artifact and prune others
+        if: steps.check_pypi.outputs.skip_publish != 'true'
+        run: |
+          set -euo pipefail
+          echo "Listing dist contents before selection:"
+          ls -l dist || true
+
+          # Find newest sdist by modification time
+          SDIST=$(ls -t dist/*.tar.gz 2>/dev/null | head -n 1 || true)
+          if [ -z "$SDIST" ]; then
+            echo "No sdist found in dist/; nothing to publish" >&2
+            ls -l dist || true
+            exit 1
+          fi
+
+          echo "Selected sdist: $SDIST"
+          FNAME=$(basename "$SDIST")
+          # Normalize project name prefix and strip .tar.gz to obtain version
+          VER=$(echo "$FNAME" | sed -E 's/^[Pp][Yy]?[Nn]?[Ee]?[Tt]?[Ss]?[Pp]?[Ll]?[Ii]?[Tt]-//; s/\.tar\.gz$//')
+          echo "Determined version: $VER"
+
+          # Remove other sdists not matching the selected version
+          for f in dist/*.tar.gz; do
+            if [ -f "$f" ] && [ "$f" != "$SDIST" ]; then
+              echo "Removing extra sdist: $f"
+              rm -f "$f"
+            fi
+          done
+
+          echo "dist/ contents after pruning:"
+          ls -l dist || true
+
+      - name: Prune wheels by METADATA Version
+        if: steps.check_pypi.outputs.skip_publish != 'true'
+        env:
+          SELECTED_VER: ${{ steps.check_pypi.outputs.version }}
+        run: |
+          set -euo pipefail
+          python scripts/prune_wheels.py
+
       - name: Publish to PyPI (OIDC)
+        if: steps.check_pypi.outputs.skip_publish != 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
