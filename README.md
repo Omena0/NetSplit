@@ -48,6 +48,10 @@ while True:
 
 ```
 
+If you only want to split the connection between HTTP and something else, in most cases you wont need a special client.
+
+Just configure netsplit to forward HTTP to the HTTP server and everything else to the other server.
+
 ## Server usage
 
 The server does not have to be built with netSplit.
